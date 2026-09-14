@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floating_root"
+    android:layout_width="290dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_floating_card"
+    android:elevation="12dp">
+
+    <!-- Header / Drag handle -->
+    <LinearLayout
+        android:id="@+id/header_bar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:background="@drawable/bg_floating_header"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚡"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tv_header_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="FB Comment Loader"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <!-- Minimize / Expand button -->
+        <TextView
+            android:id="@+id/btn_minimize"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:gravity="center"
+            android:text="━"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <!-- Close button -->
+        <TextView
+            android:id="@+id/btn_close"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="#CBD5E1"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Expanded Body View -->
+    <LinearLayout
+        android:id="@+id/layout_expanded_body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="visible">
+
+        <!-- Stats row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!-- Comments Badge -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_badge"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="التعليقات"
+                    android:textColor="#94A3B8"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/tv_comment_counter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="#38BDF8"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Replies Badge -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_badge"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="الردود"
+                    android:textColor="#94A3B8"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/tv_reply_counter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="#34D399"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Status indicator -->
+        <TextView
+            android:id="@+id/tv_status_msg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="جاهز للبدء"
+            android:textColor="#E2E8F0"
+            android:textSize="11sp" />
+
+        <!-- Real-time comment stream card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#1E293B"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="آخر تعليق تم تسجيله:"
+                android:textColor="#64748B"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/tv_last_author"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="لا يوجد تعليقات بعد"
+                android:textColor="#F8FAFC"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_last_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:text="اضغط تشغيل للبدء بالجمع"
+                android:textColor="#94A3B8"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Control buttons row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_play"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:backgroundTint="#10B981"
+                android:text="▶ تشغيل"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_stop"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:backgroundTint="#EF4444"
+                android:text="⏹ إيقاف"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <ImageButton
+                android:id="@+id/btn_open_app"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="#334155"
+                android:contentDescription="فتح التطبيق"
+                android:src="@android:drawable/ic_menu_send" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Collapsed Pill View -->
+    <LinearLayout
+        android:id="@+id/layout_collapsed_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_collapsed_stats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="💬 0 | 0"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="⤢"
+            android:textColor="#38BDF8"
+            android:textSize="14sp" />
+    </LinearLayout>
+</LinearLayout>

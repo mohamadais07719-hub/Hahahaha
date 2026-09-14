@@ -1,0 +1,6 @@
+{
+  "name": "Facebook Comment Loader",
+  "description": "Extract, load, and export Facebook post comments and replies via an accessibility overlay.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
