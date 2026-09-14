@@ -4,7 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
-import android.os.Build
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.data.model.CommentItem
 import java.util.Locale
@@ -13,49 +13,74 @@ import java.util.regex.Pattern
 class FacebookCrawlerEngine {
 
     companion object {
+        private const val TAG = "FBCrawlerEngine"
+
+        // Arabic Eastern digits (٠-٩) and Western digits (0-9)
+        private const val DIGITS = "[0-9\\u0660-\\u0669]+"
+
         // Regex patterns for "Switch to All Comments"
         private val ALL_COMMENTS_PATTERNS = listOf(
             Pattern.compile("عرض كل التعليقات", Pattern.CASE_INSENSITIVE),
             Pattern.compile("جميع التعليقات", Pattern.CASE_INSENSITIVE),
             Pattern.compile("كل التعليقات", Pattern.CASE_INSENSITIVE),
             Pattern.compile("الأكثر ملاءمة", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("أحدث التعليقات", Pattern.CASE_INSENSITIVE),
             Pattern.compile("All comments", Pattern.CASE_INSENSITIVE),
             Pattern.compile("View all comments", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("Most relevant", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("Most relevant", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("Newest comments", Pattern.CASE_INSENSITIVE)
         )
 
         // Regex patterns for "Load More Comments" / "Previous Comments"
         private val MORE_COMMENTS_PATTERNS = listOf(
             Pattern.compile("عرض المزيد من التعليقات", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض مزيد من التعليقات", Pattern.CASE_INSENSITIVE),
             Pattern.compile("عرض التعليقات السابقة", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض تعليقات سابقة", Pattern.CASE_INSENSITIVE),
             Pattern.compile("عرض تعليقات إضافية", Pattern.CASE_INSENSITIVE),
             Pattern.compile("المزيد من التعليقات", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("تعليقات سابقة", Pattern.CASE_INSENSITIVE),
             Pattern.compile("التعليقات السابقة", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("عرض\\s+\\d+\\s+من\\s+التعليقات", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض\\s+$DIGITS\\s+(?:من\\s+)?التعليقات", Pattern.CASE_INSENSITIVE),
             Pattern.compile("View more comments", Pattern.CASE_INSENSITIVE),
             Pattern.compile("View previous comments", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("See previous comments", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("See more comments", Pattern.CASE_INSENSITIVE),
             Pattern.compile("More comments", Pattern.CASE_INSENSITIVE),
             Pattern.compile("Previous comments", Pattern.CASE_INSENSITIVE),
             Pattern.compile("Load more comments", Pattern.CASE_INSENSITIVE),
             Pattern.compile("Load previous comments", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("View \\d+ more comments", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("View\\s+$DIGITS\\s+(?:more\\s+)?comments", Pattern.CASE_INSENSITIVE)
         )
 
         // Regex patterns for "View Replies" / "More Replies"
         private val MORE_REPLIES_PATTERNS = listOf(
             Pattern.compile("عرض الردود", Pattern.CASE_INSENSITIVE),
             Pattern.compile("عرض المزيد من الردود", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض مزيد من الردود", Pattern.CASE_INSENSITIVE),
             Pattern.compile("عرض الردود السابقة", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض ردود سابقة", Pattern.CASE_INSENSITIVE),
             Pattern.compile("عرض ردود إضافية", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("عرض\\s+\\d+\\s+رد(?:ود)?", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض ردود أخرى", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("عرض\\s+$DIGITS\\s+(?:من\\s+)?(?:الردود|رد(?:ود)?)", Pattern.CASE_INSENSITIVE),
             Pattern.compile("رد واحد", Pattern.CASE_INSENSITIVE),
             Pattern.compile("ردان", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\d+\\s+رد(?:ود)?", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("ردان اثنان", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("^$DIGITS\\s+رد(?:ود)?", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("رد من\\s+", Pattern.CASE_INSENSITIVE),
             Pattern.compile("View replies", Pattern.CASE_INSENSITIVE),
             Pattern.compile("View more replies", Pattern.CASE_INSENSITIVE),
             Pattern.compile("View previous replies", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("View \\d+ repl(?:y|ies)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\d+\\s+repl(?:y|ies)", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("View\\s+$DIGITS\\s+(?:more\\s+)?repl(?:y|ies)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("^$DIGITS\\s+repl(?:y|ies)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("1 reply", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("2 replies", Pattern.CASE_INSENSITIVE)
+        )
+
+        // Badges and labels commonly found next to names in Facebook that shouldn't be treated as comment text
+        private val FB_BADGES = setOf(
+            "متابع مميز", "متابع نشط", "مؤلف", "المؤلف", "مسؤول", "المسؤول", "مشرف",
+            "Top Fan", "Author", "Admin", "Moderator", "Follow", "متابعة", "محرر"
         )
 
         // Ignored UI actions / buttons
@@ -64,7 +89,8 @@ class FacebookCrawlerEngine {
             "Like", "Reply", "Share", "Copy", "Report", "Delete", "Edit",
             "Send", "إرسال", "Write a comment...", "اكتب تعليقاً...",
             "اكتب رداً...", "Write a reply...", "أهم التعليقات",
-            "Top comments", "Public", "عام", "Follow", "متابعة"
+            "Top comments", "Public", "عام", "Follow", "متابعة",
+            "التعليقات", "Comments", "أعجبني هذا التعليق", "تفاعل", "التفاعلات"
         )
     }
 
@@ -89,6 +115,7 @@ class FacebookCrawlerEngine {
      * 4. Extracts all visible comment & reply nodes
      */
     fun analyzeAndAct(
+        service: AccessibilityService,
         rootNode: AccessibilityNodeInfo?,
         sessionId: Long,
         seenSignatures: Set<String>,
@@ -104,10 +131,12 @@ class FacebookCrawlerEngine {
         // 1. Try to switch to "All comments" if dropdown / button found
         val allCommentsBtn = findButtonMatching(allNodes, ALL_COMMENTS_PATTERNS)
         if (allCommentsBtn != null && shouldClick(allCommentsBtn)) {
-            val clicked = clickNode(allCommentsBtn)
+            val text = (allCommentsBtn.text ?: allCommentsBtn.contentDescription)?.toString() ?: "كل التعليقات"
+            val clicked = clickNodeRobust(service, allCommentsBtn)
             if (clicked) {
                 recordClick(allCommentsBtn)
-                return ScanResult(emptyList(), "عرض كل التعليقات", false)
+                Log.d(TAG, "Clicked All-Comments switcher: $text")
+                return ScanResult(emptyList(), "تبديل إلى ($text)", false)
             }
         }
 
@@ -115,10 +144,12 @@ class FacebookCrawlerEngine {
         if (autoExpandReplies) {
             val replyBtn = findButtonMatching(allNodes, MORE_REPLIES_PATTERNS)
             if (replyBtn != null && shouldClick(replyBtn)) {
-                val clicked = clickNode(replyBtn)
+                val text = (replyBtn.text ?: replyBtn.contentDescription)?.toString() ?: "عرض الردود"
+                val clicked = clickNodeRobust(service, replyBtn)
                 if (clicked) {
                     recordClick(replyBtn)
-                    return ScanResult(emptyList(), "عرض الردود", false)
+                    Log.d(TAG, "Clicked Reply expander: $text")
+                    return ScanResult(emptyList(), "عرض الردود ($text)", false)
                 }
             }
         }
@@ -126,21 +157,26 @@ class FacebookCrawlerEngine {
         // 3. Look for "View more comments" / "Previous comments" button
         val moreCommentsBtn = findButtonMatching(allNodes, MORE_COMMENTS_PATTERNS)
         if (moreCommentsBtn != null && shouldClick(moreCommentsBtn)) {
-            val clicked = clickNode(moreCommentsBtn)
+            val text = (moreCommentsBtn.text ?: moreCommentsBtn.contentDescription)?.toString() ?: "عرض المزيد"
+            val clicked = clickNodeRobust(service, moreCommentsBtn)
             if (clicked) {
                 recordClick(moreCommentsBtn)
-                return ScanResult(emptyList(), "عرض المزيد من التعليقات", false)
+                Log.d(TAG, "Clicked More-Comments expander: $text")
+                return ScanResult(emptyList(), "توسيع ($text)", false)
             }
         }
 
-        // 4. Extract visible comments and replies
+        // 4. Extract visible comments and replies using multi-strategy parser
         val extractedComments = extractCommentsFromNodes(allNodes, sessionId, seenSignatures)
 
         return ScanResult(extractedComments, null, false)
     }
 
     /**
-     * Traverses the node list and parses comment blocks.
+     * Traverses the node list and parses comment blocks using multi-strategy extraction:
+     * Strategy 1: Facebook Composite contentDescription ("X commented: Y...")
+     * Strategy 2: Single node multiline blocks (Author\n[Badge]\nContent...)
+     * Strategy 3: Nearby sibling nodes (Author node followed by Content node)
      */
     private fun extractCommentsFromNodes(
         nodes: List<AccessibilityNodeInfo>,
@@ -149,121 +185,69 @@ class FacebookCrawlerEngine {
     ): List<CommentItem> {
         val results = mutableListOf<CommentItem>()
 
-        // Group candidate text nodes with their bounds and properties
-        data class TextCandidate(
+        data class RawItem(
+            val node: AccessibilityNodeInfo,
             val text: String,
-            val bounds: Rect,
-            val isClickable: Boolean,
-            val className: String
+            val bounds: Rect
         )
 
-        val textCandidates = mutableListOf<TextCandidate>()
+        val rawItems = mutableListOf<RawItem>()
 
+        // 1. Collect all non-empty text/contentDescription nodes
         for (node in nodes) {
             val text = (node.text ?: node.contentDescription)?.toString()?.trim()
-            if (!text.isNullOrBlank() && text.length > 1 && !isIgnoredText(text)) {
+            if (!text.isNullOrBlank() && text.length > 1) {
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
                 if (rect.width() > 0 && rect.height() > 0) {
-                    textCandidates.add(
-                        TextCandidate(
-                            text = text,
-                            bounds = rect,
-                            isClickable = node.isClickable,
-                            className = node.className?.toString() ?: ""
-                        )
-                    )
+                    rawItems.add(RawItem(node, text, rect))
                 }
             }
         }
 
-        // Sort by vertical position (top to bottom)
-        textCandidates.sortBy { it.bounds.top }
+        if (rawItems.isEmpty()) return emptyList()
 
-        // Find comment pairs (Author -> Content)
+        // Sort items by vertical position on screen
+        rawItems.sortBy { it.bounds.top }
+
+        // Find baseline left margin to identify indented replies
+        var minLeftIndent = Int.MAX_VALUE
+        for (item in rawItems) {
+            if (item.bounds.left in 1 until minLeftIndent && item.bounds.width() > 100) {
+                minLeftIndent = item.bounds.left
+            }
+        }
+        if (minLeftIndent == Int.MAX_VALUE) minLeftIndent = 0
+
         var lastParentAuthor = ""
         var lastParentSignature = ""
-        var minLeftIndent = Int.MAX_VALUE
 
-        // Calculate baseline left indent to identify nested replies
-        for (c in textCandidates) {
-            if (c.bounds.left > 0 && c.bounds.left < minLeftIndent) {
-                minLeftIndent = c.bounds.left
-            }
-        }
+        // =========================================================================
+        // STRATEGY 1 & 2: Single-node composite extraction (FB Accessibility strings)
+        // =========================================================================
+        val handledItemIndices = mutableSetOf<Int>()
 
-        var i = 0
-        while (i < textCandidates.size) {
-            val current = textCandidates[i]
+        for ((index, item) in rawItems.withIndex()) {
+            val text = item.text
 
-            // Check if current candidate looks like an author (usually shorter, distinct line)
-            // and the next candidate is the comment content
-            if (i + 1 < textCandidates.size) {
-                val next = textCandidates[i + 1]
+            // Pattern A: "فلان علّق: محتوى التعليق" or "X commented: Content"
+            val commentMatchAr = Regex("^(.*?)\\s+(?:علّق|علقت|كتب|كتبت)[:\\s]+(.*)", RegexOption.DOT_MATCHES_ALL).find(text)
+            val commentMatchEn = Regex("^(.*?)\\s+(?:commented|replied)[:\\s]+(.*)", RegexOption.DOT_MATCHES_ALL).find(text)
 
-                // Determine if this is a comment block
-                val isNearbyVertically = (next.bounds.top - current.bounds.bottom) in -15..80
-                val currentText = current.text
-                val nextText = next.text
+            val matched = commentMatchAr ?: commentMatchEn
+            if (matched != null) {
+                val author = cleanAuthorName(matched.groupValues[1])
+                var content = matched.groupValues[2].trim()
 
-                val isAuthorCandidate = currentText.length in 2..50 &&
-                        !isLikelyBodyText(currentText) &&
-                        !isActionText(currentText)
+                // Clean tail metadata (e.g., ", منذ ساعتين، 4 تفاعلات")
+                content = cleanCommentTail(content)
 
-                if (isNearbyVertically && isAuthorCandidate && !isActionText(nextText)) {
-                    val isReply = (current.bounds.left - minLeftIndent) > 50 ||
-                            (current.bounds.width() < next.bounds.width() * 0.85 && current.bounds.left > minLeftIndent)
-
-                    val signature = if (isReply && lastParentSignature.isNotEmpty()) {
-                        "REPLY|||${currentText.trim()}|||${nextText.trim()}|||PARENT|||$lastParentSignature"
-                    } else {
-                        "${currentText.trim()}|||${nextText.trim()}"
-                    }
+                if (isValidAuthor(author) && content.isNotBlank()) {
+                    val isReply = (item.bounds.left - minLeftIndent) > 35 || text.contains("replied") || text.contains("رد على")
+                    val signature = generateSignature(author, content, isReply, lastParentSignature)
 
                     if (!seenSignatures.contains(signature) && results.none { it.signature == signature }) {
-                        val commentItem = CommentItem(
-                            sessionId = sessionId,
-                            author = currentText.trim(),
-                            content = nextText.trim(),
-                            isReply = isReply,
-                            parentAuthor = if (isReply) lastParentAuthor else "",
-                            parentCommentSignature = if (isReply) lastParentSignature else "",
-                            signature = signature,
-                            timestamp = System.currentTimeMillis()
-                        )
-                        results.add(commentItem)
-
-                        if (!isReply) {
-                            lastParentAuthor = currentText.trim()
-                            lastParentSignature = signature
-                        }
-                    }
-                    i += 2
-                    continue
-                }
-            }
-
-            // Single block comment (where author and text are merged, e.g. "أحمد: تعليق جميل")
-            if (current.text.contains(":") || current.text.contains("\n")) {
-                val parts = if (current.text.contains("\n")) {
-                    current.text.split("\n", limit = 2)
-                } else {
-                    current.text.split(":", limit = 2)
-                }
-
-                if (parts.size == 2 && parts[0].trim().length in 2..45 && parts[1].trim().length > 1) {
-                    val author = parts[0].trim()
-                    val content = parts[1].trim()
-
-                    val isReply = (current.bounds.left - minLeftIndent) > 50
-                    val signature = if (isReply && lastParentSignature.isNotEmpty()) {
-                        "REPLY|||$author|||$content|||PARENT|||$lastParentSignature"
-                    } else {
-                        "$author|||$content"
-                    }
-
-                    if (!seenSignatures.contains(signature) && results.none { it.signature == signature }) {
-                        val commentItem = CommentItem(
+                        val comment = CommentItem(
                             sessionId = sessionId,
                             author = author,
                             content = content,
@@ -273,13 +257,127 @@ class FacebookCrawlerEngine {
                             signature = signature,
                             timestamp = System.currentTimeMillis()
                         )
-                        results.add(commentItem)
-
+                        results.add(comment)
                         if (!isReply) {
                             lastParentAuthor = author
                             lastParentSignature = signature
                         }
                     }
+                    handledItemIndices.add(index)
+                    continue
+                }
+            }
+
+            // Pattern B: Multiline node where first line is Author and subsequent is Content
+            if (text.contains("\n")) {
+                val lines = text.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                if (lines.size >= 2) {
+                    val firstLine = lines[0]
+                    if (isValidAuthor(firstLine) && !isIgnoredOrBadge(firstLine)) {
+                        // Find the first line that represents the actual comment text (skip badges & time)
+                        val contentLines = lines.drop(1).filter { line ->
+                            !isIgnoredOrBadge(line) && !isTimestampText(line) && !isActionText(line)
+                        }
+
+                        if (contentLines.isNotEmpty()) {
+                            val author = cleanAuthorName(firstLine)
+                            val content = contentLines.joinToString(" ")
+
+                            if (isValidAuthor(author) && content.isNotBlank()) {
+                                val isReply = (item.bounds.left - minLeftIndent) > 35
+                                val signature = generateSignature(author, content, isReply, lastParentSignature)
+
+                                if (!seenSignatures.contains(signature) && results.none { it.signature == signature }) {
+                                    val comment = CommentItem(
+                                        sessionId = sessionId,
+                                        author = author,
+                                        content = content,
+                                        isReply = isReply,
+                                        parentAuthor = if (isReply) lastParentAuthor else "",
+                                        parentCommentSignature = if (isReply) lastParentSignature else "",
+                                        signature = signature,
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                    results.add(comment)
+                                    if (!isReply) {
+                                        lastParentAuthor = author
+                                        lastParentSignature = signature
+                                    }
+                                }
+                                handledItemIndices.add(index)
+                                continue
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // STRATEGY 3: Proximity Sibling nodes (Separate Author and Content nodes)
+        // =========================================================================
+        var i = 0
+        while (i < rawItems.size) {
+            if (handledItemIndices.contains(i)) {
+                i++
+                continue
+            }
+
+            val current = rawItems[i]
+            val currentText = current.text
+
+            // Check if current item is a valid candidate for Author name
+            if (isValidAuthor(currentText) && !isIgnoredOrBadge(currentText) && !isActionText(currentText)) {
+                // Look ahead up to 4 nodes to find the matching content (skipping badges, times, etc.)
+                var foundContentIndex = -1
+                for (k in (i + 1)..minOf(i + 4, rawItems.size - 1)) {
+                    if (handledItemIndices.contains(k)) continue
+                    val candidate = rawItems[k]
+                    val candidateText = candidate.text
+
+                    // If we encounter another author name or action button, break
+                    if (isActionText(candidateText) || isIgnoredOrBadge(candidateText) || isTimestampText(candidateText)) {
+                        continue
+                    }
+
+                    // Vertical distance check: content should be close to author (< 220px)
+                    val verticalDistance = candidate.bounds.top - current.bounds.bottom
+                    if (verticalDistance in -20..220 && candidateText.length > 1) {
+                        foundContentIndex = k
+                        break
+                    }
+                }
+
+                if (foundContentIndex != -1) {
+                    val contentItem = rawItems[foundContentIndex]
+                    val author = cleanAuthorName(currentText)
+                    val content = contentItem.text.trim()
+
+                    val isReply = (current.bounds.left - minLeftIndent) > 35
+                    val signature = generateSignature(author, content, isReply, lastParentSignature)
+
+                    if (!seenSignatures.contains(signature) && results.none { it.signature == signature }) {
+                        val comment = CommentItem(
+                            sessionId = sessionId,
+                            author = author,
+                            content = content,
+                            isReply = isReply,
+                            parentAuthor = if (isReply) lastParentAuthor else "",
+                            parentCommentSignature = if (isReply) lastParentSignature else "",
+                            signature = signature,
+                            timestamp = System.currentTimeMillis()
+                        )
+                        results.add(comment)
+                        if (!isReply) {
+                            lastParentAuthor = author
+                            lastParentSignature = signature
+                        }
+                    }
+
+                    handledItemIndices.add(i)
+                    handledItemIndices.add(foundContentIndex)
+                    i = foundContentIndex + 1
+                    continue
                 }
             }
 
@@ -289,24 +387,70 @@ class FacebookCrawlerEngine {
         return results
     }
 
-    private fun isIgnoredText(text: String): Boolean {
-        if (IGNORED_TEXTS.contains(text.trim())) return true
-        // Match timestamps like "10 د", "2 س", "3d", "5h", "1w"
-        if (text.matches(Regex("^\\d+\\s*(?:د|س|ي|أ|h|m|d|w|min|hr|sec)$", RegexOption.IGNORE_CASE))) return true
+    private fun generateSignature(
+        author: String,
+        content: String,
+        isReply: Boolean,
+        parentSignature: String
+    ): String {
+        val cleanAuth = author.trim()
+        val cleanCont = content.trim()
+        return if (isReply && parentSignature.isNotBlank()) {
+            "REPLY|||$cleanAuth|||$cleanCont|||$parentSignature"
+        } else {
+            "$cleanAuth|||$cleanCont"
+        }
+    }
+
+    private fun cleanAuthorName(raw: String): String {
+        return raw.trim()
+            .replace(Regex("^(?:رد من|من|By)\\s+", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("[:·•].*"), "")
+            .trim()
+    }
+
+    private fun cleanCommentTail(content: String): String {
+        // Strip out trailing things like "· منذ ساعتين · أعجبني · رد"
+        return content
+            .replace(Regex("·\\s*\\d+\\s*(?:س|د|ي|أ|h|m|d|w).*$"), "")
+            .replace(Regex(",\\s*منذ.*$"), "")
+            .replace(Regex(",\\s*\\d+\\s*hours? ago.*$", RegexOption.IGNORE_CASE), "")
+            .trim()
+    }
+
+    private fun isValidAuthor(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.length !in 2..45) return false
+        if (isIgnoredOrBadge(trimmed)) return false
+        if (isActionText(trimmed)) return false
+        if (isTimestampText(trimmed)) return false
+        // Authors rarely contain punctuation like full stops or question marks
+        if (trimmed.contains("?") || trimmed.contains("؟") || trimmed.endsWith(".")) return false
+        // Authors don't have too many words
+        val words = trimmed.split("\\s+".toRegex())
+        return words.size in 1..6
+    }
+
+    private fun isIgnoredOrBadge(text: String): Boolean {
+        val trimmed = text.trim()
+        if (IGNORED_TEXTS.contains(trimmed)) return true
+        if (FB_BADGES.contains(trimmed)) return true
+        return false
+    }
+
+    private fun isTimestampText(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.startsWith("منذ") || trimmed.endsWith("ago")) return true
+        if (trimmed.matches(Regex("^$DIGITS\\s*(?:د|س|ي|أ|h|m|d|w|min|hr|sec|دقيقة|ساعة|يوم|أسبوع)$", RegexOption.IGNORE_CASE))) return true
         return false
     }
 
     private fun isActionText(text: String): Boolean {
-        return isIgnoredText(text) ||
-                MORE_COMMENTS_PATTERNS.any { it.matcher(text).find() } ||
-                MORE_REPLIES_PATTERNS.any { it.matcher(text).find() } ||
-                ALL_COMMENTS_PATTERNS.any { it.matcher(text).find() }
-    }
-
-    private fun isLikelyBodyText(text: String): Boolean {
-        // More than 10 words or ends with full stop/question mark usually indicates comment body, not author name
-        val words = text.split("\\s+".toRegex())
-        return words.size > 8 || text.endsWith(".") || text.endsWith("؟") || text.endsWith("!")
+        val trimmed = text.trim()
+        if (IGNORED_TEXTS.contains(trimmed)) return true
+        return MORE_COMMENTS_PATTERNS.any { it.matcher(trimmed).find() } ||
+                MORE_REPLIES_PATTERNS.any { it.matcher(trimmed).find() } ||
+                ALL_COMMENTS_PATTERNS.any { it.matcher(trimmed).find() }
     }
 
     private fun findButtonMatching(
@@ -314,24 +458,12 @@ class FacebookCrawlerEngine {
         patterns: List<Pattern>
     ): AccessibilityNodeInfo? {
         for (node in nodes) {
-            val text = (node.text ?: node.contentDescription)?.toString() ?: continue
+            val text = (node.text ?: node.contentDescription)?.toString()?.trim() ?: continue
             for (p in patterns) {
                 if (p.matcher(text).find()) {
-                    // Find the clickable parent or the node itself
-                    return findClickableNode(node) ?: node
+                    return node
                 }
             }
-        }
-        return null
-    }
-
-    private fun findClickableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        var current: AccessibilityNodeInfo? = node
-        while (current != null) {
-            if (current.isClickable) {
-                return current
-            }
-            current = current.parent
         }
         return null
     }
@@ -339,7 +471,7 @@ class FacebookCrawlerEngine {
     private fun shouldClick(node: AccessibilityNodeInfo): Boolean {
         val rect = Rect()
         node.getBoundsInScreen(rect)
-        val key = "${node.text}_${rect.left}_${rect.top}"
+        val key = "${node.text ?: node.contentDescription}_${rect.left}_${rect.top}"
         val lastClicked = clickedButtonHistory[key] ?: 0L
         val now = System.currentTimeMillis()
         // Wait at least 2500ms before clicking the same button at the same position again
@@ -349,29 +481,56 @@ class FacebookCrawlerEngine {
     private fun recordClick(node: AccessibilityNodeInfo) {
         val rect = Rect()
         node.getBoundsInScreen(rect)
-        val key = "${node.text}_${rect.left}_${rect.top}"
+        val key = "${node.text ?: node.contentDescription}_${rect.left}_${rect.top}"
         clickedButtonHistory[key] = System.currentTimeMillis()
     }
 
-    private fun clickNode(node: AccessibilityNodeInfo): Boolean {
-        val target = findClickableNode(node) ?: node
-        return target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    /**
+     * Robust clicking on Facebook Litho/React-Native components:
+     * 1. Tries standard Accessibility ACTION_CLICK on the node or its parents
+     * 2. Also dispatches a real Touch Tap Gesture at the center of the node's screen bounds!
+     */
+    fun clickNodeRobust(
+        service: AccessibilityService,
+        node: AccessibilityNodeInfo
+    ): Boolean {
+        val rect = Rect()
+        node.getBoundsInScreen(rect)
+
+        var standardClicked = false
+        var current: AccessibilityNodeInfo? = node
+        while (current != null) {
+            if (current.isClickable) {
+                standardClicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (standardClicked) break
+            }
+            current = current.parent
+        }
+
+        // Always also perform a direct Tap gesture at the exact center of the button!
+        // This guarantees that Facebook's Litho touch-listeners receive the press event!
+        var gestureClicked = false
+        if (rect.width() > 0 && rect.height() > 0) {
+            val clickX = rect.centerX().toFloat()
+            val clickY = rect.centerY().toFloat()
+
+            val clickPath = Path().apply {
+                moveTo(clickX, clickY)
+            }
+            val tapGesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(clickPath, 0, 60))
+                .build()
+
+            gestureClicked = service.dispatchGesture(tapGesture, null, null)
+        }
+
+        return standardClicked || gestureClicked
     }
 
     /**
      * Performs a scroll down gesture or action.
      */
     fun performScroll(service: AccessibilityService, rootNode: AccessibilityNodeInfo?): Boolean {
-        // First try standard action on scrollable container
-        if (rootNode != null) {
-            val scrollableNodes = mutableListOf<AccessibilityNodeInfo>()
-            findScrollableNodes(rootNode, scrollableNodes)
-            for (scrollable in scrollableNodes) {
-                val scrolled = scrollable.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-                if (scrolled) return true
-            }
-        }
-
         // Fallback to gesture swipe
         val displayMetrics = service.resources.displayMetrics
         val screenWidth = displayMetrics.widthPixels.toFloat()
@@ -388,20 +547,10 @@ class FacebookCrawlerEngine {
         }
 
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 450))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 420))
             .build()
 
         return service.dispatchGesture(gesture, null, null)
-    }
-
-    private fun findScrollableNodes(node: AccessibilityNodeInfo, outList: MutableList<AccessibilityNodeInfo>) {
-        if (node.isScrollable) {
-            outList.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            findScrollableNodes(child, outList)
-        }
     }
 
     private fun flattenTree(node: AccessibilityNodeInfo, outList: MutableList<AccessibilityNodeInfo>) {

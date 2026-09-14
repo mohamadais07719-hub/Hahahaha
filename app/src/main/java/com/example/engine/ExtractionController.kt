@@ -2,6 +2,7 @@ package com.example.engine
 
 import android.accessibilityservice.AccessibilityService
 import android.util.Log
+import android.view.accessibility.AccessibilityNodeInfo
 import com.example.data.CommentRepository
 import com.example.data.model.CommentItem
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +21,10 @@ import java.util.Date
 import java.util.Locale
 
 class ExtractionController(private val repository: CommentRepository) {
+
+    companion object {
+        private const val TAG = "ExtractionController"
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var extractionJob: Job? = null
@@ -71,7 +76,7 @@ class ExtractionController(private val repository: CommentRepository) {
                     repliesCount = 0,
                     lastDetectedAuthor = "",
                     lastDetectedText = "",
-                    statusMessage = "جاري البحث عن التعليقات والأزرار..."
+                    statusMessage = "جاري البحث عن نافذة فيسبوك والتعليقات..."
                 )
             }
 
@@ -91,20 +96,21 @@ class ExtractionController(private val repository: CommentRepository) {
                     continue
                 }
 
-                val rootNode = service.rootInActiveWindow
+                val rootNode = findTargetWindowRoot(service)
                 val currentState = _state.value
 
                 if (rootNode == null) {
                     _state.update {
                         it.copy(statusMessage = "يرجى فتح تطبيق فيسبوك أو المنشور...")
                     }
-                    delay(1500)
+                    delay(1200)
                     continue
                 }
 
                 try {
                     // Step 1: Scan and expand buttons or extract comments
                     val scanResult = crawlerEngine.analyzeAndAct(
+                        service = service,
                         rootNode = rootNode,
                         sessionId = sessionId,
                         seenSignatures = seenSignatures,
@@ -118,10 +124,10 @@ class ExtractionController(private val repository: CommentRepository) {
                         activityOccurred = true
                         consecutiveIdleCycles = 0
                         _state.update {
-                            it.copy(statusMessage = "تم الضغط على: ${scanResult.clickedButtonType} (جاري التحميل...)")
+                            it.copy(statusMessage = "تم النقر على: ${scanResult.clickedButtonType} (جاري التحميل...)")
                         }
                         // Generous delay to give Facebook time to populate the reply/comment nodes
-                        delay(currentState.scrollDelayMs + 400L)
+                        delay(currentState.scrollDelayMs + 300L)
                     }
 
                     // Process extracted comments
@@ -156,7 +162,7 @@ class ExtractionController(private val repository: CommentRepository) {
                                     repliesCount = updatedReplies,
                                     lastDetectedAuthor = lastAuthor,
                                     lastDetectedText = lastText,
-                                    statusMessage = "تم تسجيل $newCommentsCount تعليق و $newRepliesCount رد جديد"
+                                    statusMessage = "تم تسجيل +$newCommentsCount تعليق و +$newRepliesCount رد جديد"
                                 )
                             }
                             repository.updateSessionCounts(
@@ -171,28 +177,27 @@ class ExtractionController(private val repository: CommentRepository) {
                     if (!activityOccurred) {
                         consecutiveIdleCycles++
                         _state.update {
-                            it.copy(statusMessage = "جاري التمرير للأسفل لتحميل المزيد...")
+                            it.copy(statusMessage = "جاري التمرير للأسفل لكشف مزيد من التعليقات...")
                         }
 
                         val scrolled = crawlerEngine.performScroll(service, rootNode)
                         delay(currentState.scrollDelayMs)
 
-                        // If idle for several scrolls without new content or buttons, we might have reached the end
-                        if (consecutiveIdleCycles >= 6) {
+                        // If idle for several scrolls without new content or buttons, inform the user
+                        if (consecutiveIdleCycles >= 7) {
                             _state.update {
                                 it.copy(
-                                    statusMessage = "تم الوصول لنهاية التعليقات المتاحة"
+                                    statusMessage = "وصلنا لنهاية التعليقات المعروضة أو بانتظار التحميل..."
                                 )
                             }
-                            // Don't kill immediately, wait longer between idle checks
-                            delay(2500)
+                            delay(2000)
                         }
                     } else {
-                        delay(500)
+                        delay(350)
                     }
 
                 } catch (e: Exception) {
-                    Log.e("ExtractionController", "Error during scan loop", e)
+                    Log.e(TAG, "Error during scan loop", e)
                     delay(1000)
                 } finally {
                     try {
@@ -201,6 +206,55 @@ class ExtractionController(private val repository: CommentRepository) {
                 }
             }
         }
+    }
+
+    /**
+     * Locates the Facebook window root node reliably, bypassing any floating overlay
+     * or system windows that might capture active window focus.
+     */
+    private fun findTargetWindowRoot(service: AccessibilityService): AccessibilityNodeInfo? {
+        val ourPackage = service.packageName
+
+        // Check all interactive windows first
+        try {
+            val windows = service.windows
+            if (!windows.isNullOrEmpty()) {
+                // Priority 1: Window explicitly belonging to Facebook (Katana, Lite, Orca, etc.)
+                for (window in windows) {
+                    val root = window.root ?: continue
+                    val pkg = root.packageName?.toString() ?: ""
+                    if (pkg.contains("facebook") || pkg.contains("katana") || pkg.contains("lite")) {
+                        return root
+                    }
+                }
+
+                // Priority 2: Any non-system window that is not our overlay/app
+                for (window in windows) {
+                    val root = window.root ?: continue
+                    val pkg = root.packageName?.toString() ?: ""
+                    if (pkg.isNotEmpty() &&
+                        pkg != ourPackage &&
+                        !pkg.contains("systemui") &&
+                        !pkg.contains("launcher") &&
+                        !pkg.contains("inputmethod")) {
+                        return root
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking service.windows: ${e.message}")
+        }
+
+        // Fallback: rootInActiveWindow if it's not our own app overlay
+        val activeRoot = service.rootInActiveWindow
+        if (activeRoot != null) {
+            val pkg = activeRoot.packageName?.toString() ?: ""
+            if (pkg != ourPackage) {
+                return activeRoot
+            }
+        }
+
+        return activeRoot
     }
 
     fun stopExtraction() {

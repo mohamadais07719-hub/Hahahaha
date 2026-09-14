@@ -19,7 +19,11 @@ class FacebookCommentAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Events are observed; the ExtractionController manages the crawl loop
+        try {
+            if (FbCommentLoaderApp.instance.extractionController.accessibilityService == null) {
+                FbCommentLoaderApp.instance.extractionController.accessibilityService = this
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onInterrupt() {
